@@ -1,0 +1,260 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Amazon Linux 3 EC2 Instance with Dynatrace ActiveGate monitoring'
+
+Parameters:
+  InstanceName:
+    Type: String
+    Description: Name of the EC2 instance
+    Default: 'amazon-linux-3-instance'
+  
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    Default: 't3.medium'
+    AllowedValues:
+      - 't3.micro'
+      - 't3.small'
+      - 't3.medium'
+      - 't3.large'
+      - 't3.xlarge'
+      - 'm5.large'
+      - 'm5.xlarge'
+      - 'c5.large'
+      - 'c5.xlarge'
+  
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+    Default: ''
+  
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID where the instance will be launched
+    Default: ''
+  
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet ID where the instance will be launched
+    Default: ''
+  
+  SSHLocation:
+    Type: String
+    Description: CIDR block allowed to connect to the instance on port 22
+    Default: '0.0.0.0/0'
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+  
+  RootVolumeSize:
+    Type: Number
+    Description: Size of the root volume in GB
+    Default: 20
+    MinValue: 8
+    MaxValue: 1000
+  
+  Environment:
+    Type: String
+    Description: Environment name
+    Default: 'dev'
+    AllowedValues:
+      - 'dev'
+      - 'staging'
+      - 'prod'
+
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Description: Latest Amazon Linux 2023 AMI ID via SSM Parameter Store
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+
+Conditions:
+  UseDefaultVpc: !Equals [!Ref VpcId, '']
+  UseDefaultSubnet: !Equals [!Ref SubnetId, '']
+  UseKeyPair: !Not [!Equals [!Ref KeyPairName, '']]
+
+Resources:
+  # VPC and Subnet data sources
+  DefaultVpc:
+    Type: AWS::EC2::VPC
+    Condition: UseDefaultVpc
+    Properties:
+      CidrBlock: '172.31.0.0/16'
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-default-vpc'
+
+  DefaultSubnet:
+    Type: AWS::EC2::Subnet
+    Condition: UseDefaultSubnet
+    Properties:
+      VpcId: !If [UseDefaultVpc, !Ref DefaultVpc, !Ref VpcId]
+      CidrBlock: '172.31.0.0/20'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-default-subnet'
+
+  # Internet Gateway for default VPC
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: UseDefaultVpc
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-igw'
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: UseDefaultVpc
+    Properties:
+      VpcId: !Ref DefaultVpc
+      InternetGatewayId: !Ref InternetGateway
+
+  # Route Table for default VPC
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: UseDefaultVpc
+    Properties:
+      VpcId: !Ref DefaultVpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-route-table'
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    Condition: UseDefaultVpc
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: UseDefaultSubnet
+    Properties:
+      SubnetId: !Ref DefaultSubnet
+      RouteTableId: !If [UseDefaultVpc, !Ref RouteTable, !Ref 'AWS::NoValue']
+
+  # Security Group
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Amazon Linux 3 instance with Dynatrace ActiveGate
+      VpcId: !If [UseDefaultVpc, !Ref DefaultVpc, !Ref VpcId]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+        - IpProtocol: tcp
+          FromPort: 9999
+          ToPort: 9999
+          CidrIp: 0.0.0.0/0
+          Description: Dynatrace ActiveGate port
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS for Dynatrace
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-security-group'
+
+  # IAM Role for EC2 instance
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${InstanceName}-ec2-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-ec2-role'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${InstanceName}-instance-profile'
+      Roles:
+        - !Ref EC2InstanceRole
+
+  # EC2 Instance
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !If [UseKeyPair, !Ref KeyPairName, !Ref 'AWS::NoValue']
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      SubnetId: !If [UseDefaultSubnet, !Ref DefaultSubnet, !Ref SubnetId]
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y amazon-cloudwatch-agent
+          systemctl enable amazon-ssm-agent
+          systemctl start amazon-ssm-agent
+          mkdir -p /var/log/dynatrace
+          echo "Instance Name: ${InstanceName}" > /etc/instance-info
+          echo "Environment: ${Environment}" >> /etc/instance-info
+          echo "Deployment Date: $(date)" >> /etc/instance-info
+          echo "EC2 instance initialization completed at $(date)" > /var/log/ec2-init-complete.log
+      Tags:
+        - Key: Name
+          Value: !Ref InstanceName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: ServiceCatalog
+
+Outputs:
+  InstanceId:
+    Description: Instance ID of the newly created EC2 instance
+    Value: !Ref EC2Instance
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceId'
+
+  InstancePublicIP:
+    Description: Public IP address of the newly created EC2 instance
+    Value: !GetAtt EC2Instance.PublicIp
+    Export:
+      Name: !Sub '${AWS::StackName}-InstancePublicIP'
+
+  InstancePrivateIP:
+    Description: Private IP address of the newly created EC2 instance
+    Value: !GetAtt EC2Instance.PrivateIp
+    Export:
+      Name: !Sub '${AWS::StackName}-InstancePrivateIP'
+
+  SecurityGroupId:
+    Description: Security Group ID of the EC2 instance
+    Value: !Ref InstanceSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityGroupId'
+
+  InstanceRoleArn:
+    Description: ARN of the IAM role attached to the EC2 instance
+    Value: !GetAtt EC2InstanceRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceRoleArn' 

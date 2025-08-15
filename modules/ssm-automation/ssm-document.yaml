@@ -1,0 +1,177 @@
+schemaVersion: '2.2'
+description: 'Install Dynatrace ActiveGate on Amazon Linux 3'
+parameters:
+  dynatraceEnvironmentUrl:
+    type: String
+    description: 'Dynatrace environment URL'
+    default: '${dynatraceEnvironmentUrl}'
+  dynatraceToken:
+    type: String
+    description: 'Dynatrace API token'
+    default: '${dynatraceToken}'
+  activegateVersion:
+    type: String
+    description: 'Dynatrace ActiveGate version to install'
+    default: '${activegateVersion}'
+mainSteps:
+  - action: 'aws:runShellScript'
+    name: 'InstallDynatraceActiveGate'
+    inputs:
+      timeoutSeconds: '1800'
+      runCommand:
+        - |
+          #!/bin/bash
+          set -e
+          
+          # Log function
+          log() {
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/dynatrace/installation.log
+          }
+          
+          # Check if ActiveGate is already installed and running
+          log "Checking if Dynatrace ActiveGate is already installed"
+          
+          # Check for completion marker first
+          if [ -f "/var/log/dynatrace/installation-complete.log" ]; then
+            log "Installation completion marker found - ActiveGate was previously installed"
+            
+            # Check if any of the ActiveGate services are running
+            if systemctl is-active --quiet dynatracegateway || systemctl is-active --quiet dynatrace-gateway || systemctl is-active --quiet activegate; then
+              log "SUCCESS: Dynatrace ActiveGate is already running - skipping installation"
+              exit 0
+            else
+              log "WARNING: Completion marker exists but service is not running - proceeding with installation"
+            fi
+          fi
+          
+          # Check if ActiveGate service exists and is running
+          if systemctl is-active --quiet dynatracegateway || systemctl is-active --quiet dynatrace-gateway || systemctl is-active --quiet activegate; then
+            log "SUCCESS: Dynatrace ActiveGate is already running - skipping installation"
+            exit 0
+          fi
+          
+          # Check if ActiveGate binary exists
+          if [ -f "/opt/dynatrace/gateway/dynatracegateway" ] || [ -f "/opt/dynatrace/gateway/activegate" ]; then
+            log "ActiveGate binary found - attempting to start service"
+            
+            # Try to start the service
+            if systemctl start dynatracegateway 2>/dev/null || systemctl start dynatrace-gateway 2>/dev/null || systemctl start activegate 2>/dev/null; then
+              log "SUCCESS: Dynatrace ActiveGate service started successfully"
+              exit 0
+            else
+              log "WARNING: ActiveGate binary exists but service failed to start - proceeding with reinstallation"
+            fi
+          fi
+          
+          # Kill any stuck processes before starting
+          log "Killing any stuck Dynatrace processes"
+          pkill -f Dynatrace-ActiveGate-Linux-x86.sh || true
+          pkill -f dynatrace || true
+          sleep 5
+          
+          log "Starting Dynatrace ActiveGate installation"
+          
+          # Create installation directory
+          mkdir -p /opt/dynatrace
+          cd /opt/dynatrace
+          
+          # Download Dynatrace ActiveGate using curl (wget not available on AL2023)
+          log "Downloading Dynatrace ActiveGate version ${activegateVersion}"
+          curl -L -o Dynatrace-ActiveGate-Linux-x86.sh "https://${dynatraceEnvironmentUrl}/api/v1/deployment/installer/gateway/unix/latest?arch=x86" \
+            -H "Authorization: Api-Token ${dynatraceToken}" \
+            --insecure
+          
+          if [ $? -ne 0 ]; then
+            log "ERROR: Failed to download Dynatrace ActiveGate"
+            exit 1
+          fi
+          
+          # Make the installer executable
+          chmod +x Dynatrace-ActiveGate-Linux-x86.sh
+          
+          # Install Dynatrace ActiveGate with correct parameters
+          log "Installing Dynatrace ActiveGate with correct parameters"
+          
+          # Run installer with correct parameters (based on successful manual installation)
+          log "Running installer with correct parameters"
+          timeout 600 bash -c '
+            sudo ./Dynatrace-ActiveGate-Linux-x86.sh \
+              --set-group="AWS-EC2-Instance" \
+              --set-network-zone="AWS-CapeTown"
+          '
+          
+          if [ $? -eq 124 ]; then
+            log "ERROR: Installation timed out after 10 minutes"
+            exit 1
+          elif [ $? -ne 0 ]; then
+            log "ERROR: Failed to install Dynatrace ActiveGate"
+            exit 1
+          fi
+          
+          # Wait for ActiveGate to start
+          log "Waiting for ActiveGate to start"
+          sleep 30
+          
+          # Check if ActiveGate is running
+          if systemctl is-active --quiet dynatracegateway; then
+            log "SUCCESS: Dynatrace ActiveGate is running"
+          else
+            log "WARNING: Dynatrace ActiveGate service not found, checking for alternative service names"
+            
+            # Check for alternative service names
+            if systemctl is-active --quiet dynatrace-gateway; then
+              log "SUCCESS: Dynatrace ActiveGate is running (alternative service name)"
+            elif systemctl is-active --quiet activegate; then
+              log "SUCCESS: Dynatrace ActiveGate is running (activegate service)"
+            else
+              log "ERROR: Dynatrace ActiveGate is not running"
+              systemctl status dynatracegateway || true
+              systemctl status dynatrace-gateway || true
+              systemctl status activegate || true
+              exit 1
+            fi
+          fi
+          
+          # Configure firewall for ActiveGate (Amazon Linux 2023 uses iptables)
+          log "Configuring firewall for ActiveGate"
+          # Allow ports 9999 and 443
+          iptables -A INPUT -p tcp --dport 9999 -j ACCEPT
+          iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+          
+          # Save iptables rules
+          if command -v iptables-save >/dev/null 2>&1; then
+            mkdir -p /etc/iptables
+            iptables-save > /etc/iptables/rules.v4
+          fi
+          
+          # Create health check script
+          cat > /opt/dynatrace/health_check.sh << 'EOF'
+          #!/bin/bash
+          if systemctl is-active --quiet dynatracegateway || systemctl is-active --quiet dynatrace-gateway || systemctl is-active --quiet activegate; then
+            echo "ActiveGate is running"
+            exit 0
+          else
+            echo "ActiveGate is not running"
+            exit 1
+          fi
+          EOF
+          
+          chmod +x /opt/dynatrace/health_check.sh
+          
+          # Set up log rotation
+          cat > /etc/logrotate.d/dynatrace << 'EOF'
+          /var/log/dynatrace/*.log {
+            daily
+            missingok
+            rotate 7
+            compress
+            delaycompress
+            notifempty
+            create 644 root root
+          }
+          EOF
+          
+          log "Dynatrace ActiveGate installation completed successfully"
+          
+          # Create completion marker
+          echo "Installation completed at $(date)" > /var/log/dynatrace/installation-complete.log 
