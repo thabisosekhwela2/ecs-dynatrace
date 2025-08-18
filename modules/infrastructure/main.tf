@@ -183,24 +183,24 @@ resource "aws_iam_instance_profile" "ec2" {
 }
 
 # Attach SSM policy to EC2 role
-resource "aws_iam_role_policy_attachment" "ssm_managed_instance" {
-  count = var.provision_ec2_instance && var.attach_iam_role ? 1 : 0
-  
-  role       = aws_iam_role.ec2[0].name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-  
-  depends_on = [aws_iam_role.ec2]
-}
+# resource "aws_iam_role_policy_attachment" "ssm_managed_instance" {
+#   count = var.provision_ec2_instance && var.attach_iam_role ? 1 : 0
+#   
+#   role       = aws_iam_role.ec2[0].name
+#   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+#   
+#   depends_on = [aws_iam_role.ec2]
+# }
 
 # Attach CloudWatch policy to EC2 role
-resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
-  count = var.provision_ec2_instance && var.attach_iam_role ? 1 : 0
-  
-  role       = aws_iam_role.ec2[0].name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-  
-  depends_on = [aws_iam_role.ec2]
-}
+# resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
+#   count = var.provision_ec2_instance && var.attach_iam_role ? 1 : 0
+#   
+#   role       = aws_iam_role.ec2[0].name
+#   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+#   
+#   depends_on = [aws_iam_role.ec2]
+# }
 
 # =============================================================================
 # IAM ROLE ATTACHMENT USING CLOUDFORMATION OUTPUTS
@@ -233,8 +233,6 @@ resource "null_resource" "attach_iam_role_to_ec2" {
   
   depends_on = [
     aws_iam_instance_profile.ec2,
-    aws_iam_role_policy_attachment.ssm_managed_instance,
-    aws_iam_role_policy_attachment.cloudwatch_agent,
     aws_servicecatalog_provisioned_product.ec2_instance
   ]
 }
