@@ -1,87 +1,110 @@
+# Context outputs from infrastructure module (via labels module)
+output "id" {
+  description = "Disambiguated ID"
+  value       = module.infrastructure.id
+}
+
+output "name" {
+  description = "Normalized name"
+  value       = module.infrastructure.name
+}
+
+output "namespace" {
+  description = "Normalized namespace"
+  value       = module.infrastructure.namespace
+}
+
+output "environment" {
+  description = "Normalized environment"
+  value       = module.infrastructure.environment
+}
+
+output "stage" {
+  description = "Normalized stage"
+  value       = module.infrastructure.stage
+}
+
+output "tags" {
+  description = "Normalized Tag map"
+  value       = module.infrastructure.tags
+}
+
 # Service Catalog outputs
 output "portfolio_id" {
   description = "ID of the Service Catalog portfolio"
-  value       = module.service_catalog.portfolio_id
+  value       = module.infrastructure.portfolio_id
 }
 
 output "portfolio_arn" {
   description = "ARN of the Service Catalog portfolio"
-  value       = module.service_catalog.portfolio_arn
+  value       = module.infrastructure.portfolio_arn
 }
 
 output "product_id" {
   description = "ID of the Service Catalog product"
-  value       = module.service_catalog.product_id
+  value       = module.infrastructure.product_id
 }
 
 output "product_arn" {
   description = "ARN of the Service Catalog product"
-  value       = module.service_catalog.product_arn
+  value       = module.infrastructure.product_arn
 }
 
-# EC2 Instance outputs
-output "instance_id" {
-  description = "ID of the EC2 instance"
-  value       = module.ec2_instance.instance_id
+output "service_catalog_role_arn" {
+  description = "ARN of the Service Catalog IAM role"
+  value       = module.infrastructure.service_catalog_role_arn
 }
 
-output "instance_public_ip" {
-  description = "Public IP address of the EC2 instance"
-  value       = module.ec2_instance.instance_public_ip
+output "service_catalog_role_name" {
+  description = "Name of the Service Catalog IAM role"
+  value       = module.infrastructure.service_catalog_role_name
 }
 
-output "instance_private_ip" {
-  description = "Private IP address of the EC2 instance"
-  value       = module.ec2_instance.instance_private_ip
+# Service Catalog Provisioned Product outputs
+output "provisioned_product_id" {
+  description = "ID of the Service Catalog provisioned product"
+  value       = module.infrastructure.provisioned_product_id
 }
 
-output "instance_availability_zone" {
-  description = "Availability zone of the EC2 instance"
-  value       = module.ec2_instance.instance_availability_zone
+output "provisioned_product_arn" {
+  description = "ARN of the Service Catalog provisioned product"
+  value       = module.infrastructure.provisioned_product_arn
 }
 
-output "security_group_id" {
-  description = "ID of the security group"
-  value       = module.ec2_instance.security_group_id
+output "provisioned_product_outputs" {
+  description = "Outputs from the Service Catalog provisioned product"
+  value       = module.infrastructure.provisioned_product_outputs
 }
 
-# SSM Automation outputs
-output "ssm_document_name" {
-  description = "Name of the SSM document for Dynatrace ActiveGate installation"
-  value       = module.ssm_automation.ssm_document_name
+# EC2 Instance Management outputs
+output "ec2_iam_role_arn" {
+  description = "ARN of the IAM role created for EC2 instance"
+  value       = module.infrastructure.ec2_iam_role_arn
 }
 
-output "ssm_document_arn" {
-  description = "ARN of the SSM document for Dynatrace ActiveGate installation"
-  value       = module.ssm_automation.ssm_document_arn
+output "ec2_iam_role_name" {
+  description = "Name of the IAM role created for EC2 instance"
+  value       = module.infrastructure.ec2_iam_role_name
 }
 
-output "maintenance_window_id" {
-  description = "ID of the SSM maintenance window"
-  value       = module.ssm_automation.maintenance_window_id
+output "ec2_instance_profile_arn" {
+  description = "ARN of the IAM instance profile created for EC2 instance"
+  value       = module.infrastructure.ec2_instance_profile_arn
 }
 
-output "cloudwatch_log_group_name" {
-  description = "Name of the CloudWatch log group for SSM execution logs"
-  value       = module.ssm_automation.cloudwatch_log_group_name
+output "ec2_instance_profile_name" {
+  description = "Name of the IAM instance profile created for EC2 instance"
+  value       = module.infrastructure.ec2_instance_profile_name
 }
 
-# Connection information
-output "ssh_command" {
-  description = "SSH command to connect to the instance"
-  value       = var.key_name != null ? "ssh -i ${var.key_name}.pem ec2-user@${module.ec2_instance.instance_public_ip}" : "SSH key not configured"
-}
-
-output "instance_info" {
-  description = "Summary of the deployed instance"
+# Service Catalog Usage Information
+output "service_catalog_usage" {
+  description = "Instructions for using the Service Catalog"
   value = {
-    instance_id      = module.ec2_instance.instance_id
-    instance_name    = var.instance_name
-    instance_type    = var.instance_type
-    public_ip        = module.ec2_instance.instance_public_ip
-    private_ip       = module.ec2_instance.instance_private_ip
-    availability_zone = module.ec2_instance.instance_availability_zone
-    environment      = var.environment
-    region           = "af-south-1"
+    portfolio_name = module.infrastructure.name
+    product_name   = "${module.infrastructure.name}-product"
+    region         = "af-south-1"
+    console_url    = "https://af-south-1.console.aws.amazon.com/servicecatalog/home?region=af-south-1#/portfolios"
+    instructions   = "Use the AWS Console or AWS CLI to provision EC2 instances through this Service Catalog portfolio. The IAM role and instance profile are created by Terraform and can be manually attached to the provisioned EC2 instance."
   }
 } 

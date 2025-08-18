@@ -1,4 +1,4 @@
-# Context variables for standardized naming
+# Basic naming variables (passed from labels module)
 variable "enabled" {
   description = "Set to false to prevent the module from creating any resources"
   type        = bool
@@ -55,7 +55,7 @@ variable "context" {
 }
 
 variable "tags" {
-  description = "Additional tags (e.g. `map('BusinessUnit','XYZ')`)"
+  description = "Tags to apply to resources"
   type        = map(string)
   default     = {}
 }
@@ -70,37 +70,37 @@ variable "portfolio_description" {
 variable "provider_name" {
   description = "Name of the Service Catalog provider"
   type        = string
-  default     = "Infrastructure Team"
+  default     = "AWS"
 }
 
 variable "product_owner" {
   description = "Owner of the Service Catalog product"
   type        = string
-  default     = "Infrastructure Team"
+  default     = "DevOps Team"
 }
 
 variable "product_description" {
   description = "Description of the Service Catalog product"
   type        = string
-  default     = "Amazon Linux 3 EC2 instance with Dynatrace ActiveGate monitoring"
+  default     = "Amazon Linux 3 EC2 instance with Dynatrace ActiveGate pre-installed"
 }
 
 variable "product_distributor" {
   description = "Distributor of the Service Catalog product"
   type        = string
-  default     = "Infrastructure Team"
+  default     = "AWS"
 }
 
 variable "support_description" {
   description = "Support description for the Service Catalog product"
   type        = string
-  default     = "Contact infrastructure team for support"
+  default     = "Contact DevOps team for support"
 }
 
 variable "support_email" {
   description = "Support email for the Service Catalog product"
   type        = string
-  default     = "infrastructure@company.com"
+  default     = "devops@company.com"
 }
 
 variable "support_url" {
@@ -110,13 +110,12 @@ variable "support_url" {
 }
 
 variable "template_url" {
-  description = "URL to the CloudFormation template"
+  description = "URL of the CloudFormation template for the Service Catalog product"
   type        = string
-  default     = "https://s3.amazonaws.com/your-bucket/templates/ec2-amazon-linux-3.yaml"
 }
 
 variable "principal_arn" {
-  description = "ARN of the principal to associate with the portfolio"
+  description = "ARN of the principal to associate with the Service Catalog portfolio"
   type        = string
 }
 
