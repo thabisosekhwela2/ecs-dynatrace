@@ -43,10 +43,12 @@ Parameters:
     Default: ""
     Description: Subnet ID where the instance will be launched
 
-  IamInstanceProfileName:
+  IamInstanceRole:
     Type: String
     Default: ""
-    Description: Name of the IAM instance profile to attach to the EC2 instance
+    Description: IAM instance profile name to attach to the EC2 instance
+
+
 
 Resources:
   # Security Group for EC2 instance
@@ -93,13 +95,14 @@ Resources:
   EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AWS::SSM::Parameter::Value::String::/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+      ImageId: ami-005718719f185fb3e
       InstanceType: !Ref InstanceType
       KeyName: !If [HasKeyPairName, !Ref KeyPairName, !Ref AWS::NoValue]
       SubnetId: !If [HasSubnetId, !Ref SubnetId, !Ref AWS::NoValue]
+      IamInstanceProfile: !If [HasIamInstanceRole, !Ref IamInstanceRole, !Ref AWS::NoValue]
       SecurityGroupIds:
         - !Ref InstanceSecurityGroup
-      IamInstanceProfile: !If [HasIamInstanceProfile, !Ref IamInstanceProfileName, !Ref AWS::NoValue]
+
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -180,7 +183,8 @@ Conditions:
   HasKeyPairName: !Not [!Equals [!Ref KeyPairName, ""]]
   HasVpcId: !Not [!Equals [!Ref VpcId, ""]]
   HasSubnetId: !Not [!Equals [!Ref SubnetId, ""]]
-  HasIamInstanceProfile: !Not [!Equals [!Ref IamInstanceProfileName, ""]]
+  HasIamInstanceRole: !Not [!Equals [!Ref IamInstanceRole, ""]]
+
 
 Outputs:
   InstanceId:

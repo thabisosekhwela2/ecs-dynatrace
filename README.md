@@ -1,303 +1,193 @@
-# EC2 Service Catalog with Dynatrace ActiveGate Automation
+# EC2 Service Catalog with Service Actions
 
-This project provides a complete Terraform/Terragrunt solution for deploying Amazon Linux 3 EC2 instances through AWS Service Catalog and automating the installation of Dynatrace ActiveGate via SSM.
+This project demonstrates a clean approach to deploying EC2 instances via AWS Service Catalog and managing security groups through Service Actions, all orchestrated with Terraform and Terragrunt.
 
 ## Architecture Overview
 
-The solution consists of three main components:
-
-1. **Service Catalog Portfolio & Product**: Manages the deployment of EC2 instances through a standardized catalog
-2. **EC2 Instance Module**: Deploys Amazon Linux 3 instances with proper IAM roles and security groups
-3. **SSM Automation Module**: Automates the installation and configuration of Dynatrace ActiveGate
-
-### Architecture Diagram
-
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    AWS Service Catalog                          │
-│  ┌─────────────────┐    ┌─────────────────┐                    │
-│  │   Portfolio     │    │    Product      │                    │
-│  │                 │    │                 │                    │
-│  │ - EC2 Instances │◄──►│ - Amazon Linux 3│                    │
-│  │ - Monitoring    │    │ - Dynatrace     │                    │
-│  └─────────────────┘    └─────────────────┘                    │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    CloudFormation Template                      │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ - EC2 Instance (Amazon Linux 3)                            │ │
-│  │ - Security Groups (SSH, Dynatrace ports)                   │ │
-│  │ - IAM Roles (SSM, CloudWatch)                              │ │
-│  │ - User Data (System initialization)                         │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    SSM Automation                              │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌──────────────┐ │
-│  │ SSM Document    │    │ SSM Association │    │ Maintenance  │ │
-│  │                 │    │                 │    │ Window       │ │
-│  │ - Dynatrace     │◄──►│ - Auto-execution│◄──►│ - Scheduled  │ │
-│  │   Installation  │    │ - Target tags   │    │   updates    │ │
-│  └─────────────────┘    └─────────────────┘    └──────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Amazon Linux 3 EC2 Instance                 │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌──────────────┐ │
-│  │ System Init     │    │ SSM Agent       │    │ Dynatrace    │ │
-│  │                 │    │                 │    │ ActiveGate   │ │
-│  │ - Updates       │    │ - Managed       │    │ - Monitoring │ │
-│  │ - Packages      │    │ - Automation    │    │ - Gateway    │ │
-│  └─────────────────┘    └─────────────────┘    └──────────────┘ │
+│                    Terraform/Terragrunt                        │
+├─────────────────────────────────────────────────────────────────┤
+│  Infrastructure Module                                          │
+│  ├── Service Catalog Portfolio                                 │
+│  ├── Service Catalog Product                                   │
+│  ├── Custom SSM Document (Security Group Manager)              │
+│  ├── Service Action (Security Group Manager)                   │
+│  └── Provisioned Product (EC2 Instance)                        │
+├─────────────────────────────────────────────────────────────────┤
+│  Service Action Manager Module (AWSCC Provider)                │
+│  └── Service Action Association                                │
+├─────────────────────────────────────────────────────────────────┤
+│  Service Action Trigger Module                                 │
+│  └── Service Action Execution                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Prerequisites
+## Key Components
 
-### AWS Requirements
-- AWS CLI configured with appropriate permissions
-- S3 bucket for Terraform state storage
-- DynamoDB table for state locking
-- IAM permissions for Service Catalog, EC2, SSM, and CloudWatch
+### 1. **Infrastructure Module** (`modules/infrastructure/`)
+- **Service Catalog Portfolio**: Container for organizing products
+- **Service Catalog Product**: Defines the EC2 instance template
+- **Custom SSM Document**: Automation document for security group management
+- **Service Action**: Links the SSM document to the Service Catalog product
+- **Provisioned Product**: The actual EC2 instance deployment
 
-### Dynatrace Requirements
-- Dynatrace environment URL
-- Dynatrace API token with ActiveGate installation permissions
+### 2. **Service Action Manager Module** (`modules/service-action-manager/`)
+- Uses the AWSCC provider to manage service action associations
+- Associates service actions with products and provisioning artifacts
 
-### Local Requirements
-- Terraform >= 1.0
-- Terragrunt >= 0.45
-- AWS CLI
+### 3. **Service Action Trigger Module** (`modules/service-action-trigger/`)
+- Demonstrates how to trigger service actions with custom parameters
+- Accepts security group configuration (CIDR blocks, ports, protocols)
 
-## Project Structure
+## Directory Structure
 
 ```
-EC2-Service-Catalog/
 ├── modules/
-│   ├── service-catalog/
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   └── outputs.tf
-│   ├── ec2-instance/
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   ├── outputs.tf
-│   │   └── user-data.sh
-│   └── ssm-automation/
-│       ├── main.tf
-│       ├── variables.tf
-│       ├── outputs.tf
-│       └── ssm-document.yaml
-├── templates/
-│   └── ec2-amazon-linux-3.yaml
+│   ├── infrastructure/              # Service Catalog infrastructure
+│   ├── service-action-manager/      # AWSCC service action associations
+│   ├── service-action-trigger/      # Service action execution
+│   └── labels/                      # Standardized naming and tagging
 ├── environments/
-│   ├── dev/
-│   │   └── terragrunt.hcl
-│   └── prod/
-│       └── terragrunt.hcl
-├── main.tf
-├── variables.tf
-├── outputs.tf
-├── terragrunt.hcl
-└── README.md
+│   ├── dev/                         # Development environment
+│   ├── service-action-association/  # Service action associations
+│   └── service-action-demo/         # Service action trigger demo
+├── templates/                       # CloudFormation templates
+└── README.md                        # This file
 ```
 
-## Configuration
+## Quick Start
 
-### 1. Update Root Configuration
-
-Edit `terragrunt.hcl` to configure your S3 backend:
-
-```hcl
-remote_state {
-  backend = "s3"
-  config = {
-    bucket         = "your-terraform-state-bucket"
-    key            = "${path_relative_to_include()}/terraform.tfstate"
-    region         = "af-south-1"
-    encrypt        = true
-    dynamodb_table = "terraform-locks"
-  }
-}
-```
-
-### 2. Environment-Specific Configuration
-
-Update the environment-specific configurations in `environments/dev/terragrunt.hcl` and `environments/prod/terragrunt.hcl`:
-
-```hcl
-inputs = {
-  # Dynatrace settings
-  dynatrace_environment_url = "your-environment.live.dynatrace.com"
-  dynatrace_token = "your-dynatrace-token"
-  
-  # Principal ARN for Service Catalog access
-  principal_arn = "arn:aws:iam::YOUR-ACCOUNT:user/YOUR-USERNAME"
-}
-```
-
-### 3. CloudFormation Template URL
-
-Update the `template_url` in your environment configuration to point to your CloudFormation template:
-
-```hcl
-template_url = "https://s3.amazonaws.com/your-bucket/templates/ec2-amazon-linux-3.yaml"
-```
-
-## Deployment
-
-### 1. Initialize Terragrunt
+### 1. Deploy Service Catalog Infrastructure
 
 ```bash
-# Navigate to the environment directory
 cd environments/dev
-
-# Initialize Terragrunt
-terragrunt init
-```
-
-### 2. Plan the Deployment
-
-```bash
-# Review the deployment plan
-terragrunt plan
-```
-
-### 3. Deploy the Infrastructure
-
-```bash
-# Deploy the infrastructure
 terragrunt apply
 ```
 
-### 4. Verify Deployment
+This creates:
+- Service Catalog portfolio and product
+- Custom SSM document for security group management
+- Service action for security group operations
+- EC2 instance via Service Catalog
 
-After deployment, verify the following:
-
-1. **Service Catalog**: Check that the portfolio and product are created
-2. **EC2 Instance**: Verify the instance is running and accessible
-3. **SSM Automation**: Check that the SSM document and association are created
-4. **Dynatrace ActiveGate**: Verify installation through SSM execution logs
-
-## Usage
-
-### Deploying EC2 Instances via Service Catalog
-
-1. Navigate to AWS Service Catalog console
-2. Select your portfolio
-3. Choose the Amazon Linux 3 EC2 Instance product
-4. Fill in the required parameters
-5. Deploy the instance
-
-### Monitoring Dynatrace ActiveGate Installation
-
-1. Check SSM execution logs in CloudWatch
-2. Monitor the installation progress in `/var/log/dynatrace/installation.log`
-3. Verify ActiveGate service status: `systemctl status dynatracegateway`
-
-### Accessing the Instance
+### 2. Associate Service Action (Optional)
 
 ```bash
-# SSH access (if key pair is configured)
-ssh -i your-key.pem ec2-user@<instance-public-ip>
-
-# Check Dynatrace ActiveGate status
-sudo systemctl status dynatracegateway
-
-# View installation logs
-sudo tail -f /var/log/dynatrace/installation.log
+cd environments/service-action-association
+terragrunt apply
 ```
 
-## Security Considerations
+This associates the service action with the product using the AWSCC provider.
 
-### Network Security
-- SSH access is restricted to specified CIDR blocks
-- Dynatrace ports (9999, 443) are open for monitoring
-- All outbound traffic is allowed
+### 3. Trigger Service Action (Demo)
 
-### IAM Security
-- EC2 instances use least-privilege IAM roles
-- SSM automation uses dedicated IAM roles
-- Service Catalog has appropriate permissions
+```bash
+cd environments/service-action-demo
+terragrunt apply
+```
 
-### Data Security
-- Root volumes are encrypted
-- API tokens are marked as sensitive
-- State files are encrypted in S3
+This demonstrates how to trigger the service action with custom security group parameters.
 
-## Monitoring and Logging
+## Security Group Management
 
-### CloudWatch Integration
-- System logs are sent to CloudWatch
-- Dynatrace installation logs are captured
-- SSM execution logs are stored
+The service action accepts the following parameters:
 
-### Dynatrace Monitoring
-- ActiveGate provides monitoring capabilities
-- Application performance monitoring
-- Infrastructure monitoring
+```hcl
+security_group_parameters = {
+  security_group_name = "ec2-dev-security-group"
+  vpc_id = "vpc-017a01d64a7dce04f"
+  description = "Security group for EC2 instance"
+  ingress_rules = [
+    {
+      description = "SSH access"
+      from_port = 22
+      to_port = 22
+      protocol = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    },
+    {
+      description = "HTTP access"
+      from_port = 80
+      to_port = 80
+      protocol = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  ]
+  egress_rules = [
+    {
+      description = "All outbound traffic"
+      from_port = 0
+      to_port = 0
+      protocol = "-1"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  ]
+}
+```
+
+## Benefits of This Approach
+
+1. **Separation of Concerns**: EC2 deployment and security group management are separate
+2. **Reusability**: Service actions can be reused across multiple products
+3. **Parameterization**: Full control over security group configuration
+4. **Terraform Native**: All managed through Terraform/Terragrunt
+5. **AWSCC Integration**: Uses AWS Cloud Control API for service action associations
+6. **Clean Architecture**: Removed complex IAM role attachment logic
+
+## Prerequisites
+
+- AWS CLI configured with appropriate permissions
+- Terraform and Terragrunt installed
+- S3 backend configured for Terraform state
+- CloudFormation template uploaded to S3
+
+## Configuration
+
+### Environment Variables
+
+Set the following environment variables:
+
+```bash
+export AWS_PROFILE=your-profile
+export AWS_REGION=af-south-1
+```
+
+### Backend Configuration
+
+The project uses S3 backend for Terraform state. Configure in `backend.tf`:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "your-terraform-state-bucket"
+    key    = "ec2-service-catalog/terraform.tfstate"
+    region = "af-south-1"
+  }
+}
+```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **SSM Agent Not Running**
-   ```bash
-   sudo systemctl status amazon-ssm-agent
-   sudo systemctl start amazon-ssm-agent
-   ```
+1. **Service Action Association Fails**: Ensure the AWSCC provider is properly configured
+2. **SSM Document Creation Fails**: Check IAM permissions for SSM document creation
+3. **Service Action Execution Fails**: Verify the service action parameters are correctly formatted
 
-2. **Dynatrace Installation Fails**
-   - Check API token permissions
-   - Verify environment URL
-   - Review installation logs
+### Logs and Debugging
 
-3. **Service Catalog Access Denied**
-   - Verify principal ARN
-   - Check IAM permissions
-   - Ensure portfolio association
+- Check CloudWatch logs for SSM automation execution
+- Review Service Catalog provisioned product status
+- Monitor EC2 instance security group attachments
 
-### Log Locations
+## Contributing
 
-- SSM execution logs: CloudWatch `/aws/ssm/execution/<instance-name>`
-- Dynatrace installation: `/var/log/dynatrace/installation.log`
-- System logs: `/var/log/messages`
-
-## Cost Optimization
-
-### Instance Sizing
-- Use appropriate instance types for your workload
-- Consider using Spot instances for non-critical workloads
-- Monitor and adjust based on usage patterns
-
-### Storage Optimization
-- Use GP3 volumes for better performance/cost ratio
-- Implement lifecycle policies for logs
-- Consider EBS optimization for high I/O workloads
-
-## Maintenance
-
-### Updates
-- Dynatrace ActiveGate updates are automated via SSM
-- System updates are applied during instance initialization
-- Security patches are applied automatically
-
-### Backup
-- Consider implementing automated backups for critical data
-- Use AWS Backup for comprehensive backup strategies
-- Implement disaster recovery procedures
-
-## Support
-
-For issues and questions:
-- Check the troubleshooting section
-- Review CloudWatch logs
-- Contact the infrastructure team
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
 ## License
 
