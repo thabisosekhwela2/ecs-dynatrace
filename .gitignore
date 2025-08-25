@@ -1,6 +1,5 @@
 # Terragrunt files
 .terragrunt-cache/
-**/terragrunt.hcl
 **/.terragrunt-cache/
 
 # Terraform files
