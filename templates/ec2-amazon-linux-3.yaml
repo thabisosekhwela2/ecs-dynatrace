@@ -48,49 +48,7 @@ Parameters:
     Default: ""
     Description: IAM instance profile name to attach to the EC2 instance
 
-
-
 Resources:
-  # Security Group for EC2 instance
-  InstanceSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for Service Catalog EC2 instance
-      GroupName: !Sub "${InstanceName}-sg"
-      VpcId: !If [HasVpcId, !Ref VpcId, !Ref AWS::NoValue]
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
-          Description: SSH access
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-          Description: HTTP access
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
-          Description: HTTPS access
-        - IpProtocol: tcp
-          FromPort: 9999
-          ToPort: 9999
-          CidrIp: 0.0.0.0/0
-          Description: Dynatrace ActiveGate port
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-          Description: All outbound traffic
-      Tags:
-        - Key: Name
-          Value: !Sub "${InstanceName}-security-group"
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: ManagedBy
-          Value: CloudFormation
-
   # EC2 Instance
   EC2Instance:
     Type: AWS::EC2::Instance
@@ -100,8 +58,7 @@ Resources:
       KeyName: !If [HasKeyPairName, !Ref KeyPairName, !Ref AWS::NoValue]
       SubnetId: !If [HasSubnetId, !Ref SubnetId, !Ref AWS::NoValue]
       IamInstanceProfile: !If [HasIamInstanceRole, !Ref IamInstanceRole, !Ref AWS::NoValue]
-      SecurityGroupIds:
-        - !Ref InstanceSecurityGroup
+      # Security groups will be attached via Service Action
 
       UserData:
         Fn::Base64: !Sub |
@@ -204,12 +161,6 @@ Outputs:
     Value: !GetAtt EC2Instance.PrivateIp
     Export:
       Name: !Sub "${AWS::StackName}-InstancePrivateIP"
-
-  SecurityGroupId:
-    Description: ID of the security group created for the EC2 instance
-    Value: !Ref InstanceSecurityGroup
-    Export:
-      Name: !Sub "${AWS::StackName}-SecurityGroupId"
 
   CloudformationStackARN:
     Description: ARN of the CloudFormation stack
