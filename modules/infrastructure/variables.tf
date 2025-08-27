@@ -159,12 +159,22 @@ variable "vpc_id" {
   description = "VPC ID where the EC2 instance will be deployed"
   type        = string
   default     = ""
+  
+  validation {
+    condition     = var.vpc_id == "" || can(regex("^vpc-", var.vpc_id))
+    error_message = "VPC ID must start with 'vpc-' or be empty."
+  }
 }
 
 variable "subnet_id" {
   description = "Subnet ID where the EC2 instance will be deployed"
   type        = string
   default     = ""
+  
+  validation {
+    condition     = var.subnet_id == "" || can(regex("^subnet-", var.subnet_id))
+    error_message = "Subnet ID must start with 'subnet-' or be empty."
+  }
 }
 
 variable "key_pair_name" {
